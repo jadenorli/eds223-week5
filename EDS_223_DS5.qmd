@@ -1,0 +1,94 @@
+---
+title: "EDS_223_DS5"
+format: html
+editor: visual
+---
+
+# Load Libraries
+```{r}
+#load in the libraries
+library(tidyverse)
+library(sf)
+library(terra)
+library(spData)
+library(spDataLarge)
+library(units)
+library(tmap)
+
+```
+
+
+# Read Data
+```{r}
+#load raster data representing grain sizes with the three classes clay, silt and sand
+grain <- terra::rast(system.file("raster/grain.tif", package = "spData"))
+
+```
+
+
+# Subset Points
+```{r}
+#subset to points that are higher than 3100m 
+nz_height_sub <- nz_height %>%
+  filter(elevation > 3100)
+
+```
+
+
+# Create a Raster
+```{r}
+#create a template raster
+nz_template <- rast(terra::ext(nz_height_sub), 
+                    resolution = 3000, 
+                    crs = terra::crs(nz_height_sub))
+
+#convert the vector points to raster data
+nz_raster <- rasterize(nz_height_sub, nz_template, 
+                       field = "elevation", 
+                       fun = "length")
+
+```
+
+
+
+# Visualize the Raster
+```{r}
+#plot the raster data
+tm_shape(nz_raster) +
+  tm_raster() +
+  tm_shape(nz_height_sub) +
+  tm_symbols(size = 0.5, 
+             shape = 10) 
+
+```
+# Find the Maximum Elevation 
+```{r}
+#find the maximum elevation in each grid cell of the raster
+nz_raster_max <- rasterize(nz_height_sub, nz_template,
+                           field = "elevation",
+                           fun = max)
+
+```
+
+
+# Visualize the Maximum Elevations
+```{r}
+#plot the raster data
+tm_shape(nz_raster_max) +
+  tm_raster() +
+  tm_shape(nz_height_sub) +
+  tm_symbols(size = 0.5, 
+             shape = 10) 
+
+```
+
+
+# Reduce Resolution
+```{r}
+#reduce the resolution of the raster using resolution
+nz_res <- (nz_raster_max resolution = 6000)
+
+#reduce the resolution of the raster using aggregate
+
+```
+

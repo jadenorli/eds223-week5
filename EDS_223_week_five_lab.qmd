@@ -1,0 +1,241 @@
+---
+title: "EDS_223_week_five_lab"
+format: html
+editor: visual
+---
+
+# Load Libraries
+
+```{r}
+library(sf) # vector handling
+library(terra) # raster handling
+library(tidyverse)
+library(tmap) # map making
+library(spData) # spatial data
+library(spDataLarge) # spatial data
+library(viridisLite)
+library(units)
+
+```
+
+# Read in Data
+
+```{r}
+#load in the raster data for the elevation of the park
+elevation <- terra::rast(system.file("raster/srtm.tif", package = "spDataLarge"))
+
+#load in the vector data for the boundaries of the park
+boundary <- read_sf(system.file("vector/zion.gpkg", package = "spDataLarge"))
+
+```
+
+## a) Check the CRS
+
+First thing ALWAYS; Check the CRS
+
+```{r}
+#check the crs
+crs(elevation) == crs(boundary)
+
+##since this is FALSE, set up a conditional to check and transform the CRS to match 
+if(crs(elevation) == crs(boundary)) {
+  print("CRS match!")
+} else {
+  warning("update CRS to match")
+  
+  boundary <- st_transform(boundary, st_crs(elevation)) ##using an sf function (st_crs) on raster data
+}
+
+```
+
+## b) Visualize
+
+```{r}
+#plot the elevation and the boundaries of Zion National Park
+tm_shape(elevation) +
+  tm_raster(title = "Elevation (meters)") +
+  tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+  tm_layout(legend.outside = TRUE)
+
+```
+
+# Crop and Mask
+
+## a) Crop and Clip Rasters with Vectors
+
+We can crop and clip raster objects with vector objects
+
+```{r}
+#crop the raster data to the extent of the vector data
+##if you tried to convert the vector data to a raster and then crop it would likely increase the extent of the vector
+elevation_cropped <- terra::crop(elevation, boundary)
+
+
+#plot the elevation_cropped and the boundaries of Zion National Park
+tm_shape(elevation_cropped) +
+  tm_raster(title = "Elevation (meters)") +
+  tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+  tm_layout(legend.outside = TRUE)
+
+```
+
+## b) Mask Raster with Vector
+
+create a mask using the vector object
+
+```{r}
+#mask the raster based on the vector object 
+##convert the cells outside of the park to NAs
+elevation_masked <- terra::mask(elevation, boundary)
+
+#plot the elevation_masked and the boundaries of Zion National Park
+tm_shape(elevation_masked) +
+  tm_raster(title = "Elevation (meters)") +
+  tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+  tm_layout(legend.outside = TRUE)
+
+#can also do this with the cropped version
+## convert the cells outside of the park to NAs
+elevation_masked2 <- terra::mask(elevation_cropped, boundary)
+
+#plot the elevation_masked2 and the boundaries of Zion National Park
+tm_shape(elevation_masked2) +
+  tm_raster(title = "Elevation (meters)") +
+  tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+  tm_layout(legend.outside = TRUE)
+
+```
+
+```{r}
+#do an inverse mask to get all the cells outside of the park
+##convert cells inside of the park to NAs
+elevation_inverse_masked <- terra::mask(elevation_cropped, boundary, inverse = TRUE)
+
+#plot the elevation_inverse_masked and the boundaries of Zion National Park
+tm_shape(elevation_inverse_masked) +
+  tm_raster(title = "Elevation (meters)") +
+  tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+  tm_layout(legend.outside = TRUE)
+
+```
+
+## c) Conditional Crop and Mask
+
+create a mask to select locations in the park that meet a certain elevation criteria
+
+```{r}
+#masking to all the cells inside the park 
+elevation_inside <- terra::mask(elevation_cropped, boundary)
+
+#masking based on values of cells
+elevation_mask <- elevation_inside
+
+#subset the elevation mask to convert all elevations below 2000m into NAs
+elevation_mask[elevation_mask < 2000] <- NA
+
+#rename a layer
+names(elevation) <- "elevation"
+
+#check that the rename work 
+names(elevation)
+
+#plot the elevation mask
+tm_shape(elevation_mask) +
+  tm_raster() +
+  tm_layout(legend.outside = TRUE)
+
+
+```
+
+```{r}
+#convert the raster into an sf object
+##when we convert into polygons it turns the raster grid cells that contain values into polygons
+###when we do this it is averaging the value across the selected cells into a single mean value for that polygon 
+elevation_mask_poly <- terra::as.polygons(elevation_mask) %>%
+  st_as_sf
+
+#plot the elevation mask
+tm_shape(elevation_mask_poly) +
+  tm_polygons() +
+  tm_layout(legend.outside = TRUE)
+
+```
+
+```{r}
+#load in the zion points data
+data("zion_points", package = "spDataLarge")
+
+#check that the CRS match
+crs(zion_points) == crs(elevation)
+
+#transform the crs since they dont't match
+st_transform(zion_points, crs = st_crs(elevation))
+
+tm_shape(elevation) +
+  tm_raster() +
+  tm_shape(boundary) +
+  tm_borders() +
+  tm_shape(zion_points) +
+  tm_symbols()
+
+#extract points based on the elevation 
+##by default terra assigned an ID to each of the points 
+pts_elevation <- terra::extract(elevation, zion_points)
+
+#then bind the dataframes
+##it would be smarter to first assign an ID before converting so you can avoid binding the dataframes
+zion_points <- cbind(zion_points, pts_elevation)
+  
+```
+
+```{r}
+#create a sf object to use as a transect 
+zion_transect <- cbind(c(-133.2, -112.9),
+                       c(37.45, 37.2)) %>%
+  st_linestring() %>%
+  st_sfc(crs = crs(elevation)) %>%
+  st_sf(geometry = .)
+
+#plot the transect
+tm_shape(elevation) +
+  tm_raster() +
+  tm_shape(zion_transect) +
+  tm_lines()
+
+#we converted this line into a bunch of segments
+zion_transect$id = 1:nrow(zion_transect)
+zion_transect <- st_segmentize(zion_transect, dfMaxLength = 250)
+
+#then converted these segments into points
+zion_transect <- st_cast(zion_transect, "POINT")
+
+#plot the transect
+tm_shape(elevation) +
+  tm_raster() +
+  tm_shape(zion_transect) +
+  tm_dots()
+
+#extract the elevation points along the transect
+transect <- terra::extract(elevation, zion_transect)
+zion_transect <- cbind(zion_transect, transect)
+
+#plot the elevations
+ggplot(zion_transect, aes (x = ID, y = elevation)) +
+  geom_point()
+
+#find the distance of each of the segments from the start of the transect to use in a nice plot
+zion_transect <- zion_transect %>%
+  group_by(id) %>%
+  mutate(dist = st_distance(geometry)[,1]) %>%
+  filter(!is.na(elevation))
+
+#plot the elevations
+ggplot(zion_transect, aes (x = dist, y = elevation)) +
+  geom_point()
+
+```
