@@ -7,6 +7,9 @@ editor: visual
 # Load Libraries
 
 ```{r}
+#this clears out the environment
+rm(list = ls())
+
 library(tidyverse)
 library(sf)
 library(terra)
